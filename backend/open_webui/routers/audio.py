@@ -15,6 +15,8 @@ import aiohttp
 import aiofiles
 import requests
 import mimetypes
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 from fastapi import (
     Depends,
@@ -1101,13 +1103,24 @@ def get_elevenlabs_voices(api_key: str) -> dict:
     """
 
     try:
-        # TODO: Add retries
-        response = requests.get(
+        session = requests.Session()
+        retries = Retry(
+            total=5,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST"],
+        )
+        adapter = HTTPAdapter(max_retries=retries)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+
+        response = session.get(
             "https://api.elevenlabs.io/v1/voices",
             headers={
                 "xi-api-key": api_key,
                 "Content-Type": "application/json",
             },
+            timeout=10,
         )
         response.raise_for_status()
         voices_data = response.json()
@@ -1119,8 +1132,6 @@ def get_elevenlabs_voices(api_key: str) -> dict:
         # Avoid @lru_cache with exception
         log.error(f"Error fetching voices: {str(e)}")
         raise RuntimeError(f"Error fetching voices: {str(e)}")
-
-    return voices
 
 
 @router.get("/voices")
